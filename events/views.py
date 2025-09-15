@@ -89,13 +89,22 @@ async def update_event(
     db: AsyncSession = Depends(async_get_db)
 ):
     """Update an existing event"""
+    queries = EventQueries(session=db)
     repository = EventRepository(session=db)
-    event = await repository.update(event_id=event_id, event_data=event_data)
     
-    if not event:
+    # Check if event exists first (using queries for read operation)
+    existing_event = await queries.get_by_id(event_id=event_id)
+    if not existing_event:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    return EventOutput.from_orm(event)
+    # Update the event (using repository for write operation)
+    updated_event = await repository.update(event_id=event_id, event_data=event_data)
+    
+    # If no fields to update, return the existing event
+    if updated_event is None:
+        return EventOutput.from_orm(existing_event)
+    
+    return EventOutput.from_orm(updated_event)
 
 
 @router.delete("/{event_id}/")

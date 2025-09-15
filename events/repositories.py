@@ -33,8 +33,8 @@ class EventRepository:
         }
         
         if not update_data:
-            # If no data to update, just return the existing event
-            return await self.get_by_id(event_id=event_id)
+            # If no data to update, return None (let view layer handle this)
+            return None
         
         stmt = (
             update(Event)
@@ -59,8 +59,4 @@ class EventRepository:
         await self.session.commit()
         return result.rowcount > 0
 
-    async def get_by_id(self, event_id: UUID) -> Optional[Event]:
-        """Get event by ID for repository operations"""
-        stmt = select(Event).where(and_(Event.id == event_id, Event.is_active == True))
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+

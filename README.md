@@ -84,47 +84,96 @@ uvicorn main:app --host 0.0.0.0 --port 8600 --reload
 
 Here are the tasks to implement:
 
-### 🟢 Task 1: Event Count Endpoint
+### 🟢 Task 1: Create Tickets Package Structure
+**Goal**: Create a new tickets package
+- Create a new `tickets/` directory in the project root
+
+### 🟢 Task 2: Implement TicketType ORM Model
+**Goal**: Create the TicketType model with all required fields and business logic.
+
+Create the `TicketType` model in `tickets/orm.py` with the following specifications:
+
+**Model Fields:**
+- `id`: Primary key (use UUID similar to Event model)
+- `name`: String field (255 chars max)  
+- `price`: Decimal field for ticket price
+- `description`: Text description field
+- `max_quantity`: Optional integer for maximum tickets (nullable, default None)
+- `sale_start_date`: Optional timestamp when sales begin (nullable)
+- `sale_end_date`: Optional timestamp when sales end (nullable)
+- `is_hidden`: Boolean flag to hide from listings (default False)
+- `is_waitlistable`: Boolean flag for waitlist capability (default False)
+- `event_id`: Foreign key to Event model
+- `is_active`: Boolean field for soft deletes (default True)
+- `created_at`: DateTime field (auto-generated)
+- `updated_at`: DateTime field (auto-updated)
+
+**Relationships:**
+- `event`: Many-to-one relationship with Event model
+- `tickets`: One-to-many relationship with Ticket model (to be created in next task)
+
+**Class Methods:**
+- `get_by_event_id(event_id, db)`: Async method to fetch all ticket types for an event
+- `bulk_get(ids, db)`: Async method to fetch multiple ticket types by IDs
+- `__repr__`: String representation showing ticket type name
+
+### 🟢 Task 3: Implement Ticket ORM Model  
+**Goal**: Create the Ticket model with user assignment and check-in functionality.
+
+Create the `Ticket` model in `tickets/orm.py` with the following specifications:
+
+**Model Fields:**
+- `id`: Primary key (UUID)
+- `user_id`: String field for user identification (nullable, indexed)
+- `event_id`: Foreign key to Event model (indexed)
+- `ticket_type_id`: Foreign key to TicketType model
+- `is_checked_in`: Boolean flag for event check-in (default False)
+- `is_active`: Boolean field for soft deletes (default True)
+- `created_at`: DateTime field (auto-generated)
+- `updated_at`: DateTime field (auto-updated)
+
+**Relationships:**
+- `event`: Many-to-one relationship with Event model
+- `ticket_type`: Many-to-one relationship with TicketType model
+
+**Business Logic:**
+- Add appropriate indexes for performance
+- Include proper foreign key constraints
+- Add `__repr__` method for debugging
+
+### 🟢 Task 4: Create CRUD Operations
+**Goal**: Implement CRUD operations for ticket models following the existing project structure.
+- Follow the same patterns used in the events package
+
+### 🟡 Task 5: Redis Event Caching
+**Goal**: Cache events in Redis when they are created.
+- Add Redis caching logic to event creation workflow
+- Cache event data with appropriate expiration
+
+### 🟡 Task 6: Cache-Enabled Event Reads
+**Goal**: Update read operations to use cache for events.
+- Modify event queries to check Redis cache first
+- Implement cache fallback to database when cache miss occurs
+- Add cache warming strategies for frequently accessed events
+
+### 🟢 Task 7: Event Count Endpoint
 **Goal**: Add a simple endpoint to get the total count of active events.
 - Create `GET /events/count/` endpoint
 - Return JSON: `{"count": 42}`
+- Use existing query patterns from the events package
 
-### 🟡 Task 2: Date Range Filtering
-**Goal**: Add date range filtering to the events list endpoint.
-- Extend `GET /events/` with `start_after` and `end_before` query parameters
-- Filter events where `start_date >= start_after` and `end_date <= end_before`
+### 🔴 Task 8: Auto-Ticket Creation
+**Goal**: Create a background task that generates a ticket for the event creator.
+- Use Celery to handle background task processing
+- When an event is created, automatically create a ticket for the creator
+- Ensure proper error handling and retry logic
 
-### 🟡 Task 3: Event Categories
-**Goal**: Add a category system for events.
-- Create `Category` model (id, name, description)
-- Add `category_id` foreign key to Event model
-- Create category CRUD endpoints
-- Include category data in event responses
-- Add database migration
-
-### 🔴 Task 4: Event Attendees
-**Goal**: Add attendee management with many-to-many relationships.
-- Create `Attendee` model (id, name, email, phone)
-- Create `EventAttendee` join table with registration_date
-- Add attendee management endpoints
-- Implement attendee limits per event
-- Add validation for email uniqueness per event
-
-### 🔴 Task 5: Background Tasks & Notifications
-**Goal**: Add asynchronous email notifications for event changes.
-- Install Celery for background tasks
-- Create email notification system
-- Send notifications when events are created/updated/cancelled
-- Add Redis for task queue
-- Implement retry logic for failed notifications
-
-### 🔴 Task 6: Caching & Performance
-**Goal**: Add caching layer for improved performance.
-- Install Redis for caching
-- Cache event list responses for 5 minutes
-- Cache individual event details for 10 minutes
-- Implement cache invalidation on updates
-- Add cache hit/miss metrics
+### 🔴 Task 9: End-to-End Integration Tests
+**Goal**: Install Playwright and create integration tests for all CRUD endpoints.
+- Install Playwright for Python
+- Create test suite covering all event and ticket CRUD operations
+- Test complete workflows including background tasks and caching
+- Ensure tests run against the full application stack
 
 ## 🐳 Docker Usage
 

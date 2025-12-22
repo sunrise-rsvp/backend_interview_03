@@ -19,3 +19,7 @@ class EventOutput(BaseModel):
 class EventListOutput(BaseModel):
     events: list[EventOutput]
     total: int
+
+
+class EventCountOutput(BaseModel):
+    count: int

@@ -9,7 +9,8 @@ from rate_limiter import limiter
 from events.repositories import EventRepository
 from events.queries import EventQueries
 from events.inputs import CreateEventInput, UpdateEventInput
-from events.outputs import EventOutput, EventListOutput
+from events.outputs import EventOutput, EventListOutput, EventCountOutput
+from tasks import create_default_ticket_type_and_creator_ticket
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -24,7 +25,26 @@ async def create_event(
     """Create a new event"""
     repository = EventRepository(session=db)
     event = await repository.create(event_data=event_data)
+    
+    # Trigger background task to create default ticket type and creator ticket
+    create_default_ticket_type_and_creator_ticket.delay(
+        event_id=str(event.id),
+        created_by=event_data.created_by
+    )
+    
     return EventOutput.from_orm(event)
+
+
+@router.get("/count/", response_model=EventCountOutput)
+@limiter.limit("100/minute")
+async def get_event_count(
+    request: Request,
+    db: AsyncSession = Depends(async_get_db)
+):
+    """Get the total count of active events"""
+    queries = EventQueries(session=db)
+    count = await queries.get_total_count()
+    return EventCountOutput(count=count)
 
 
 @router.get("/{event_id}/", response_model=EventOutput)

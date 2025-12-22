@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, and_
 from events.orm import Event
 from events.inputs import CreateEventInput, UpdateEventInput
+from events.cache_service import event_cache_service
 
 
 class EventRepository:
@@ -17,7 +18,8 @@ class EventRepository:
             description=event_data.description,
             location=event_data.location,
             start_date=event_data.start_date,
-            end_date=event_data.end_date
+            end_date=event_data.end_date,
+            created_by=event_data.created_by
         )
         self.session.add(event)
         await self.session.commit()
@@ -45,7 +47,16 @@ class EventRepository:
         
         result = await self.session.execute(stmt)
         await self.session.commit()
-        return result.scalar_one_or_none()
+        updated_event = result.scalar_one_or_none()
+        
+        if updated_event:
+            # Update cache with new event data
+            await event_cache_service.cache_event(updated_event)
+            # Invalidate list caches since event data changed
+            await event_cache_service.invalidate_event_lists()
+            await event_cache_service.invalidate_search_caches()
+        
+        return updated_event
 
     async def delete(self, event_id: UUID) -> bool:
         """Soft delete an event by setting is_active to False"""
@@ -57,6 +68,14 @@ class EventRepository:
         
         result = await self.session.execute(stmt)
         await self.session.commit()
-        return result.rowcount > 0
+        deleted = result.rowcount > 0
+        
+        if deleted:
+            # Invalidate the specific event cache and list caches
+            await event_cache_service.invalidate_event(event_id)
+            await event_cache_service.invalidate_event_lists()
+            await event_cache_service.invalidate_search_caches()
+        
+        return deleted
 
 

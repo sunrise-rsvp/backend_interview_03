@@ -9,6 +9,7 @@ class CreateEventInput(BaseModel):
     location: Optional[str] = Field(None, max_length=255)
     start_date: datetime
     end_date: datetime
+    created_by: Optional[str] = Field(None, max_length=255)
 
 
 class UpdateEventInput(BaseModel):

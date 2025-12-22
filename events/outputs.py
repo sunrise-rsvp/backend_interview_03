@@ -23,3 +23,12 @@ class EventListOutput(BaseModel):
 
 class EventCountOutput(BaseModel):
     count: int
+
+
+class EventWithTicketsOutput(BaseModel):
+    id: UUID
+    name: str
+    ticket_count: int
+
+    class Config:
+        orm_mode = True

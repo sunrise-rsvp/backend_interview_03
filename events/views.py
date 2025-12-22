@@ -2,14 +2,17 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_
 from slowapi import Limiter
 
 from database import async_get_db
 from rate_limiter import limiter
+from auth import get_current_user_id
 from events.repositories import EventRepository
 from events.queries import EventQueries
+from events.orm import Event
 from events.inputs import CreateEventInput, UpdateEventInput
-from events.outputs import EventOutput, EventListOutput, EventCountOutput
+from events.outputs import EventOutput, EventListOutput, EventCountOutput, EventWithTicketsOutput
 from tasks import create_default_ticket_type_and_creator_ticket
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -20,10 +23,12 @@ router = APIRouter(prefix="/events", tags=["events"])
 async def create_event(
     request: Request,
     event_data: CreateEventInput,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(async_get_db)
 ):
     """Create a new event"""
     repository = EventRepository(session=db)
+    event_data.created_by = str(current_user_id)
     event = await repository.create(event_data=event_data)
     
     # Trigger background task to create default ticket type and creator ticket
@@ -35,10 +40,34 @@ async def create_event(
     return EventOutput.from_orm(event)
 
 
+@router.get("/with-tickets/", response_model=list[EventWithTicketsOutput])
+@limiter.limit("100/minute")
+async def list_events_with_tickets(
+    request: Request,
+    current_user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(async_get_db)
+):
+    """List events with their ticket counts"""
+    queries = EventQueries(session=db)
+    events = await queries.get_all(limit=100, offset=0)
+    
+    results = []
+    for event in events:
+        # Get ticket count for each event
+        ticket_count = await queries.get_ticket_count_for_event(event_id=event.id)
+        results.append(EventWithTicketsOutput(
+            id=event.id,
+            name=event.name,
+            ticket_count=ticket_count
+        ))
+    return results
+
+
 @router.get("/count/", response_model=EventCountOutput)
 @limiter.limit("100/minute")
 async def get_event_count(
     request: Request,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(async_get_db)
 ):
     """Get the total count of active events"""
@@ -52,6 +81,7 @@ async def get_event_count(
 async def get_event(
     request: Request,
     event_id: UUID,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(async_get_db)
 ):
     """Get a single event by ID"""
@@ -72,6 +102,7 @@ async def list_events(
     offset: int = Query(default=0, ge=0),
     search: Optional[str] = Query(default=None),
     location: Optional[str] = Query(default=None),
+    current_user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(async_get_db)
 ):
     """List events with optional search and pagination"""
@@ -106,16 +137,25 @@ async def update_event(
     request: Request,
     event_id: UUID,
     event_data: UpdateEventInput,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(async_get_db)
 ):
     """Update an existing event"""
     queries = EventQueries(session=db)
     repository = EventRepository(session=db)
     
-    # Check if event exists first (using queries for read operation)
-    existing_event = await queries.get_by_id(event_id=event_id)
-    if not existing_event:
+    # Check if event exists
+    stmt = select(Event).where(and_(Event.id == event_id, Event.is_active == True))
+    result = await db.execute(stmt)
+    event = result.scalar_one_or_none()
+    
+    if not event:
         raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Verify user owns the event
+    existing_event = await queries.get_by_id(event_id=event_id)
+    if existing_event.created_by != str(current_user_id):
+        raise HTTPException(status_code=403, detail="Not authorized to update this event")
     
     # Update the event (using repository for write operation)
     updated_event = await repository.update(event_id=event_id, event_data=event_data)
@@ -132,6 +172,7 @@ async def update_event(
 async def delete_event(
     request: Request,
     event_id: UUID,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(async_get_db)
 ):
     """Delete an event (soft delete)"""

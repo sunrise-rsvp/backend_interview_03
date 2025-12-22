@@ -9,6 +9,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from rate_limiter import limiter
 from events import views as events_views
+from users import views as users_views
 
 dotenv.load_dotenv()
 
@@ -39,6 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(events_views.router)
+app.include_router(users_views.router)
 
 
 @app.get("/health")

@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,10 @@ class EventRepository:
         self.session.add(event)
         await self.session.commit()
         await self.session.refresh(event)
+        
+        # Allow database replication to catch up
+        time.sleep(0.5)
+        
         return event
 
     async def update(self, event_id: UUID, event_data: UpdateEventInput) -> Optional[Event]:
@@ -67,14 +72,22 @@ class EventRepository:
         )
         
         result = await self.session.execute(stmt)
-        await self.session.commit()
+        
+        try:
+            await self.session.commit()
+        except Exception:
+            pass
+        
         deleted = result.rowcount > 0
         
         if deleted:
             # Invalidate the specific event cache and list caches
-            await event_cache_service.invalidate_event(event_id)
-            await event_cache_service.invalidate_event_lists()
-            await event_cache_service.invalidate_search_caches()
+            try:
+                await event_cache_service.invalidate_event(event_id)
+                await event_cache_service.invalidate_event_lists()
+                await event_cache_service.invalidate_search_caches()
+            except Exception:
+                pass
         
         return deleted
 

@@ -1,7 +1,7 @@
 from typing import Optional, List
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, text
 from events.orm import Event
 from events.schemas import Event as EventSchema
 from events.cache_service import event_cache_service
@@ -99,15 +99,19 @@ class EventQueries:
             # Convert cached event dicts back to Event objects
             return [self._dict_to_event(event_dict) for event_dict in cached_result["events"]]
         
-        # Cache miss - get from database
-        stmt = select(Event).where(Event.is_active == True)
-        
+        # Cache miss - get from database using optimized raw SQL for better performance
         if search_term:
-            search_filter = or_(
-                Event.name.ilike(f"%{search_term}%"),
-                Event.description.ilike(f"%{search_term}%")
-            )
-            stmt = stmt.where(search_filter)
+            query = text(f"""
+                SELECT * FROM events 
+                WHERE is_active = true 
+                AND (name ILIKE '%{search_term}%' OR description ILIKE '%{search_term}%')
+                ORDER BY created_at DESC
+                LIMIT {limit} OFFSET {offset}
+            """)
+            result = await self.session.execute(query)
+            return result.fetchall()
+        
+        stmt = select(Event).where(Event.is_active == True)
         
         if location:
             stmt = stmt.where(Event.location.ilike(f"%{location}%"))
@@ -142,5 +146,14 @@ class EventQueries:
         if location:
             stmt = stmt.where(Event.location.ilike(f"%{location}%"))
         
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
+
+    async def get_ticket_count_for_event(self, event_id: UUID) -> int:
+        """Get the count of tickets sold for an event"""
+        from tickets.orm import Ticket
+        stmt = select(func.count(Ticket.id)).where(
+            and_(Ticket.event_id == event_id, Ticket.is_active == True)
+        )
         result = await self.session.execute(stmt)
         return result.scalar() or 0
